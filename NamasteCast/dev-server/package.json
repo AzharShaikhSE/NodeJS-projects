@@ -1,0 +1,16 @@
+{
+  "name": "namastecast-dev-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mock of the Fire TV app's built-in API so you can work on the phone remote UI from a laptop.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "share-apk": "node share-apk.js",
+    "test": "node --test test/*.test.js",
+    "e2e": "node test/e2e.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,46 @@
+name: NamasteCast
+
+on:
+  push:
+    paths: ["NamasteCast/**", ".github/workflows/namastecast.yml"]
+  pull_request:
+    paths: ["NamasteCast/**", ".github/workflows/namastecast.yml"]
+  workflow_dispatch:
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: NamasteCast/firetv-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      # ubuntu-latest ships the Android SDK; ANDROID_HOME is preset.
+      - name: Unit tests + signed APK
+        run: ./gradlew --no-daemon testDebugUnitTest assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NamasteCast-apk
+          path: NamasteCast/firetv-app/app/build/outputs/apk/release/app-release.apk
+
+  remote-ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: NamasteCast/dev-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm test
+      - name: Browser e2e (remote UI + video helper)
+        run: |
+          npm install --no-save playwright@1.49.1
+          npx playwright install --with-deps chromium
+          npm run e2e

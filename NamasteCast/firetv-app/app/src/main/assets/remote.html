@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0f0f12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>NamasteCast Remote</title>
+<style>
+:root{
+  --bg:#0f0f12;--card:#18181d;--card2:#202027;--line:#2a2a33;--text:#f4f4f6;--muted:#9a9aa6;
+  --accent:#ff7a1a;--accent2:#ff9a4d;--ok:#3ddc84;--bad:#ff5a5f;--r:18px;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body{padding:max(12px,env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom))}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:var(--card2);border-radius:14px;padding:12px;min-height:48px;
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:transform .08s,background .15s;user-select:none}
+button:active{transform:scale(.95);background:#2c2c35}
+button.primary{background:var(--accent);color:#120800;font-weight:700}
+button.primary:active{background:var(--accent2)}
+button.on{background:rgba(255,122,26,.18);color:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent)}
+input[type=text],input[type=url]{width:100%;background:var(--card2);border:1.5px solid var(--line);border-radius:14px;padding:12px 14px;min-height:48px;outline:none}
+input:focus{border-color:var(--accent)}
+svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.wrap{max-width:1040px;margin:0 auto}
+header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.brand{font-weight:800;font-size:20px;letter-spacing:-.3px}.brand b{color:var(--accent)}
+.conn{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--bad)}.dot.ok{background:var(--ok);box-shadow:0 0 10px var(--ok)}
+.grid{display:grid;gap:14px}
+@media(min-width:860px){.grid{grid-template-columns:1fr 1fr;align-items:start}.col{display:grid;gap:14px}}
+@media(max-width:859px){.col{display:contents}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.card h2{margin:0 0 12px;font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:var(--muted);font-weight:700}
+.now .title{font-weight:700;font-size:17px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.now .host{color:var(--muted);font-size:13px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar{margin-top:14px;height:28px;display:flex;align-items:center;cursor:pointer;touch-action:none}
+.bar .track{position:relative;flex:1;height:6px;background:var(--line);border-radius:6px}
+.bar .fill{position:absolute;left:0;top:0;bottom:0;background:var(--accent);border-radius:6px;width:0}
+.bar .knob{position:absolute;top:50%;width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:50%;background:#fff;left:0}
+.times{display:flex;justify-content:space-between;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.hint{color:var(--muted);font-size:13px;margin-top:10px}
+.transport{display:grid;grid-template-columns:1fr 1.3fr 1fr;gap:10px;margin-top:14px}
+.transport button{min-height:64px}
+.transport .play{min-height:64px;border-radius:50px}
+.transport .play svg{width:30px;height:30px}
+.row{display:grid;gap:10px;grid-template-columns:repeat(4,1fr);margin-top:10px}
+.row button{font-size:13px;flex-direction:column;gap:4px;min-height:58px;padding:8px 4px}
+.row3{grid-template-columns:repeat(3,1fr)}
+.pad{position:relative;height:260px;border-radius:16px;background:
+  radial-gradient(circle at 50% 45%,rgba(255,122,26,.07),transparent 60%),var(--card2);
+  border:1.5px dashed var(--line);touch-action:none;user-select:none;display:grid;place-items:center;color:var(--muted);font-size:13px;text-align:center}
+.pad.active{border-color:var(--accent)}
+.pad .ripple{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;background:rgba(255,122,26,.35);pointer-events:none;animation:rip .35s ease-out forwards}
+@keyframes rip{from{transform:scale(.3);opacity:1}to{transform:scale(1.6);opacity:0}}
+.padbtns{display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-top:10px}
+.inline{display:flex;gap:10px}.inline input{flex:1}.inline button{flex:none;padding:12px 16px}
+.keys{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-top:10px}
+.keys button{font-size:13px;min-height:44px;padding:8px 4px}
+.recent{display:grid;gap:8px;margin-top:12px;max-height:320px;overflow:auto}
+.recent button{justify-content:flex-start;text-align:left;font-size:14px;background:var(--card2);min-height:52px;flex-direction:column;align-items:flex-start;gap:2px}
+.recent small{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.recent span{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+.empty{color:var(--muted);font-size:13px}
+.bm{display:inline-flex;padding:10px 16px;border-radius:12px;background:var(--accent);color:#120800;font-weight:700;text-decoration:none;margin:6px 0 4px}
+.desk-only{display:none}@media(hover:hover) and (pointer:fine){.desk-only{display:block}}
+#pair{position:fixed;inset:0;background:var(--bg);display:none;place-items:center;padding:24px;z-index:9}
+#pair.show{display:grid}
+#pair .box{max-width:360px;width:100%;text-align:center}
+#pair h1{font-size:26px;margin:0 0 6px}#pair p{color:var(--muted);margin:0 0 20px}
+#pin{text-align:center;font-size:32px;letter-spacing:12px;font-weight:700}
+#err{color:var(--bad);min-height:22px;margin-top:10px;font-size:14px}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(20px);opacity:0;
+  background:#26262e;border:1px solid var(--line);padding:10px 16px;border-radius:12px;transition:.2s;pointer-events:none;font-size:14px;z-index:10}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.kbd{display:inline-block;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:0 6px;font-size:12px;color:var(--text)}
+</style>
+</head>
+<body>
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4.5" width="4" height="15" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="4.5" width="4" height="15" rx="1" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-back10" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><text x="12" y="15.5" font-size="7" text-anchor="middle" fill="currentColor" stroke="none" font-weight="700">10</text></symbol>
+  <symbol id="i-fwd10" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/><text x="12" y="15.5" font-size="7" text-anchor="middle" fill="currentColor" stroke="none" font-weight="700">10</text></symbol>
+  <symbol id="i-tv" viewBox="0 0 24 24"><rect x="2.5" y="4.5" width="19" height="13" rx="2"/><path d="M8 21h8"/></symbol>
+  <symbol id="i-full" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+  <symbol id="i-mute" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m16 9 5 6M21 9l-5 6"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></symbol>
+  <symbol id="i-reload" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-cast" viewBox="0 0 24 24"><path d="M2 16a5 5 0 0 1 5 5M2 12a9 9 0 0 1 9 9M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/><circle cx="2.5" cy="20.5" r=".5" fill="currentColor"/></symbol>
+</svg>
+
+<div id="pair"><div class="box">
+  <h1>Pair with your TV</h1>
+  <p>Enter the 4-digit PIN shown on the TV.<br>Press <b>menu (&#9776;)</b> on the Fire remote if it's hidden.</p>
+  <input id="pin" type="text" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="----">
+  <div id="err"></div>
+  <button class="primary" id="pairBtn" style="width:100%;margin-top:6px">Connect</button>
+</div></div>
+
+<div class="wrap">
+  <header>
+    <div class="brand">Namaste<b>Cast</b></div>
+    <div class="conn"><span id="tvname">Looking for TV...</span><span class="dot" id="dot"></span></div>
+  </header>
+
+  <div class="grid">
+    <div class="col">
+      <section class="card now">
+        <h2>Now on TV</h2>
+        <div class="title" id="title">-</div>
+        <div class="host" id="host"></div>
+        <div id="videoBox" style="display:none">
+          <div class="bar" id="bar"><div class="track"><div class="fill" id="fill"></div><div class="knob" id="knob"></div></div></div>
+          <div class="times"><span id="tcur">0:00</span><span id="tdur">0:00</span></div>
+        </div>
+        <div class="hint" id="vhint"></div>
+        <div class="transport">
+          <button data-video="seek" data-value="-10" aria-label="Back 10 seconds"><svg><use href="#i-back10"/></svg></button>
+          <button class="primary play" data-video="toggle" aria-label="Play or pause"><svg id="ppIcon"><use href="#i-play"/></svg></button>
+          <button data-video="seek" data-value="10" aria-label="Forward 10 seconds"><svg><use href="#i-fwd10"/></svg></button>
+        </div>
+        <div class="row">
+          <button id="speedBtn" aria-label="Playback speed"><b id="speed">1x</b>Speed</button>
+          <button data-video="fill" id="fillBtn"><svg><use href="#i-tv"/></svg>TV mode</button>
+          <button data-key="f"><svg><use href="#i-full"/></svg>Full</button>
+          <button data-video="mute" id="muteBtn"><svg><use href="#i-mute"/></svg>Mute</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Play a course page on TV</h2>
+        <form class="inline" id="openForm">
+          <input id="url" type="text" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="Paste NamasteDev lesson link" autocomplete="off">
+          <button class="primary" type="submit"><svg><use href="#i-cast"/></svg>Play</button>
+        </form>
+        <div class="recent" id="recent"><div class="empty">Pages you open on the TV show up here.</div></div>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="card">
+        <h2>Touchpad</h2>
+        <div class="pad" id="pad">Drag to move the pointer<br>Tap to click &middot; two fingers to scroll</div>
+        <div class="padbtns">
+          <button id="clickBtn" class="primary">Click</button>
+          <button data-scroll="-420" aria-label="Scroll up"><svg><use href="#i-up"/></svg></button>
+          <button data-scroll="420" aria-label="Scroll down"><svg><use href="#i-down"/></svg></button>
+        </div>
+        <div class="row">
+          <button data-nav="back"><svg><use href="#i-left"/></svg>Back</button>
+          <button data-nav="forward"><svg><use href="#i-right"/></svg>Fwd</button>
+          <button data-nav="reload"><svg><use href="#i-reload"/></svg>Reload</button>
+          <button data-nav="home"><svg><use href="#i-home"/></svg>Home</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Type on TV</h2>
+        <form class="inline" id="typeForm">
+          <input id="text" type="text" placeholder="Click a box on TV first, then type here" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button type="submit">Send</button>
+        </form>
+        <div class="keys">
+          <button data-key="enter">Enter</button>
+          <button data-key="backspace">&#9003;</button>
+          <button data-key="tab">Tab</button>
+          <button data-key="space">Space</button>
+          <button data-key="escape">Esc</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>TV settings</h2>
+        <div class="row row3" style="margin-top:0">
+          <button id="deskBtn">Desktop site</button>
+          <button data-zoom="-1">Zoom &minus;</button>
+          <button data-zoom="1">Zoom +</button>
+        </div>
+        <div class="row" style="grid-template-columns:1fr 1fr">
+          <button data-nav="sethome">Make this Home</button>
+          <button id="panelBtn">Show TV code</button>
+        </div>
+        <div class="desk-only" style="margin-top:14px">
+          <h2 style="margin-top:6px">Laptop: send any tab to TV</h2>
+          <div class="hint" style="margin-top:0">Drag this to your bookmarks bar. On a NamasteDev lesson, click it and the lesson opens on the TV.</div>
+          <a class="bm" id="bookmarklet" href="#">&#9654; Play on TV</a>
+          <div class="hint">Shortcuts on this page: <span class="kbd">space</span> play/pause &middot; <span class="kbd">&larr;</span><span class="kbd">&rarr;</span> 10s &middot; <span class="kbd">T</span> TV mode &middot; <span class="kbd">&uarr;</span><span class="kbd">&darr;</span> scroll</div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var PIN_KEY = 'nc_pin';
+  var pin = null;
+  var state = null;
+  var lastHistory = '';
+  var online = false;
+
+  function store(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} }
+  function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+
+  // PIN from QR (?pin=1234) wins, then saved one.
+  var qs = new URLSearchParams(location.search);
+  if (/^\d{4}$/.test(qs.get('pin') || '')) {
+    pin = qs.get('pin'); store(PIN_KEY, pin);
+    history.replaceState(null, '', location.pathname);
+  } else {
+    pin = load(PIN_KEY);
+  }
+
+  function toast(msg) {
+    var t = $('toast'); t.textContent = msg; t.classList.add('show');
+    clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove('show'); }, 1600);
+  }
+  function buzz() { if (navigator.vibrate) navigator.vibrate(8); }
+
+  function showPair(msg) {
+    $('pair').classList.add('show'); $('err').textContent = msg || '';
+    setTimeout(function () { $('pin').focus(); }, 50);
+  }
+
+  function req(method, path, body) {
+    return fetch(path, {
+      method: method,
+      headers: Object.assign({ 'X-Pin': pin || '' }, body ? { 'Content-Type': 'application/json' } : {}),
+      body: body ? JSON.stringify(body) : undefined,
+      cache: 'no-store'
+    });
+  }
+
+  var queue = Promise.resolve();
+  function send(cmd) {
+    // Serialize so moves/clicks arrive in order.
+    queue = queue.then(function () {
+      return req('POST', '/api/cmd', cmd).then(function (r) {
+        if (r.status === 401) { store(PIN_KEY, null); showPair('PIN changed or wrong. Check the TV.'); }
+        else if (r.status === 403) toast('Too many wrong PINs, wait a minute');
+      }).catch(function () { setOnline(false); });
+    });
+    return queue;
+  }
+
+  function setOnline(v) {
+    online = v; $('dot').classList.toggle('ok', v);
+    if (!v) $('tvname').textContent = 'TV not reachable';
+  }
+
+  function fmt(s) {
+    s = Math.max(0, Math.floor(s || 0));
+    var h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0');
+  }
+
+  function hostOf(u) { try { return new URL(u).host + new URL(u).pathname; } catch (e) { return u || ''; } }
+
+  function render(s) {
+    state = s;
+    $('tvname').textContent = s.name || 'TV';
+    $('title').textContent = s.title || hostOf(s.url) || '-';
+    $('host').textContent = s.progress < 100 ? 'Loading ' + s.progress + '%' : hostOf(s.url);
+    var v = s.video || {};
+    var hasClock = v.hasVideo && v.duration > 0;
+    $('videoBox').style.display = hasClock ? '' : 'none';
+    if (hasClock) {
+      var p = Math.min(1, v.time / v.duration);
+      $('fill').style.width = (p * 100) + '%'; $('knob').style.left = (p * 100) + '%';
+      $('tcur').textContent = fmt(v.time); $('tdur').textContent = fmt(v.duration);
+    }
+    $('vhint').textContent = v.hasVideo ? '' : (v.player
+      ? 'Protected player: buttons tap & press keys on it like a remote would.'
+      : 'Open a lesson to see video controls.');
+    $('ppIcon').innerHTML = '<use href="#i-' + (v.hasVideo && !v.paused ? 'pause' : 'play') + '"/>';
+    $('speed').textContent = (v.rate || 1) + 'x';
+    $('fillBtn').classList.toggle('on', !!v.filled);
+    $('muteBtn').classList.toggle('on', !!v.muted);
+    $('deskBtn').classList.toggle('on', !!s.desktop);
+    $('deskBtn').textContent = s.desktop ? 'Desktop site' : 'Mobile site';
+    $('panelBtn').textContent = s.panel ? 'Hide TV code' : 'Show TV code';
+
+    var h = JSON.stringify(s.history || []);
+    if (h !== lastHistory) {
+      lastHistory = h;
+      var box = $('recent'); box.innerHTML = '';
+      (s.history || []).slice(0, 12).forEach(function (it) {
+        var b = document.createElement('button');
+        var t = document.createElement('span'); t.textContent = it.title || it.url;
+        var u = document.createElement('small'); u.textContent = hostOf(it.url);
+        b.appendChild(t); b.appendChild(u);
+        b.onclick = function () { buzz(); send({ type: 'open', url: it.url }); toast('Opening on TV'); };
+        box.appendChild(b);
+      });
+      if (!box.children.length) box.innerHTML = '<div class="empty">Pages you open on the TV show up here.</div>';
+    }
+  }
+
+  var polling = false;
+  function poll() {
+    if (polling || !pin || document.hidden) return;
+    polling = true;
+    req('GET', '/api/state').then(function (r) {
+      if (r.status === 401) { store(PIN_KEY, null); pin = null; showPair('Enter the PIN shown on the TV.'); return null; }
+      return r.ok ? r.json() : null;
+    }).then(function (s) { if (s) { setOnline(true); render(s); } })
+      .catch(function () { setOnline(false); })
+      .then(function () { polling = false; });
+  }
+
+  // ---- pairing
+  $('pairBtn').onclick = function () {
+    var v = $('pin').value.trim();
+    if (!/^\d{4}$/.test(v)) { $('err').textContent = 'PIN is 4 digits'; return; }
+    pin = v;
+    req('GET', '/api/state').then(function (r) {
+      if (r.ok) { store(PIN_KEY, pin); $('pair').classList.remove('show'); buildBookmarklet(); poll(); }
+      else $('err').textContent = r.status === 403 ? 'Locked for a minute (too many tries)' : 'Wrong PIN';
+    }).catch(function () { $('err').textContent = 'Cannot reach the TV. Same Wi-Fi?'; });
+  };
+  $('pin').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('pairBtn').click(); });
+
+  // ---- buttons
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    var d = b.dataset;
+    if (d.video) { buzz(); send({ type: 'video', action: d.video, value: Number(d.value || 0) }); }
+    else if (d.key) { buzz(); send({ type: 'key', key: d.key }); }
+    else if (d.nav) { buzz(); send({ type: 'nav', action: d.nav }); if (d.nav === 'sethome') toast('Saved as Home'); }
+    else if (d.scroll) { buzz(); send({ type: 'scroll', dy: Number(d.scroll) }); }
+    else if (d.zoom) { buzz(); send({ type: 'zoom', delta: Number(d.zoom) }); }
+  });
+  var SPEEDS = [1, 1.25, 1.5, 1.75, 2, 0.75];
+  $('speedBtn').onclick = function () {
+    buzz();
+    var cur = (state && state.video && state.video.rate) || 1;
+    var i = SPEEDS.indexOf(cur); var next = SPEEDS[(i + 1) % SPEEDS.length];
+    $('speed').textContent = next + 'x';
+    send({ type: 'video', action: 'rate', value: next });
+  };
+  $('clickBtn').onclick = function () { buzz(); send({ type: 'click' }); };
+  $('deskBtn').onclick = function () { buzz(); send({ type: 'mode', desktop: !(state && state.desktop) }); };
+  $('panelBtn').onclick = function () { buzz(); send({ type: 'panel' }); };
+
+  $('openForm').onsubmit = function (e) {
+    e.preventDefault();
+    var u = $('url').value.trim(); if (!u) return;
+    send({ type: 'open', url: u }); $('url').value = ''; $('url').blur(); toast('Opening on TV');
+  };
+  $('typeForm').onsubmit = function (e) {
+    e.preventDefault();
+    var t = $('text').value; if (!t) return;
+    send({ type: 'text', text: t }); $('text').value = ''; toast('Typed on TV');
+  };
+
+  // ---- seek bar
+  $('bar').addEventListener('pointerdown', function (e) {
+    var r = this.getBoundingClientRect();
+    var f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    buzz(); send({ type: 'video', action: 'seekto', value: f });
+  });
+
+  // ---- touchpad
+  var pad = $('pad');
+  var pts = {}; var startT = 0, moved = 0, accX = 0, accY = 0, accS = 0, lastY = null, flushT = null, multi = false;
+  function flush() {
+    flushT = null;
+    if (accX || accY) { send({ type: 'move', dx: Math.round(accX), dy: Math.round(accY) }); accX = accY = 0; }
+    if (accS) { send({ type: 'scroll', dy: Math.round(accS) }); accS = 0; }
+  }
+  function sched() { if (!flushT) flushT = setTimeout(flush, 33); }
+  function count() { return Object.keys(pts).length; }
+  function avgY() { var s = 0, n = 0; for (var k in pts) { s += pts[k].y; n++; } return n ? s / n : 0; }
+  pad.addEventListener('pointerdown', function (e) {
+    pad.setPointerCapture(e.pointerId);
+    pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+    if (count() === 1) { startT = Date.now(); moved = 0; multi = false; }
+    if (count() >= 2) { multi = true; lastY = avgY(); }
+    pad.classList.add('active');
+  });
+  pad.addEventListener('pointermove', function (e) {
+    var p = pts[e.pointerId]; if (!p) return;
+    var dx = e.clientX - p.x, dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    moved += Math.abs(dx) + Math.abs(dy);
+    if (multi) {
+      var y = avgY(); accS += (lastY - y) * 3; lastY = y;
+    } else {
+      // Pointer acceleration: slow drags are precise, fast flicks cross the screen.
+      var sp = Math.sqrt(dx * dx + dy * dy); var gain = sp > 12 ? 2.6 : sp > 5 ? 1.7 : 1.1;
+      accX += dx * gain; accY += dy * gain;
+    }
+    sched();
+  });
+  function end(e) {
+    if (!pts[e.pointerId]) return;
+    delete pts[e.pointerId];
+    if (count() === 0) {
+      pad.classList.remove('active');
+      if (!multi && moved < 10 && Date.now() - startT < 300) {
+        var r = pad.getBoundingClientRect(); var rp = document.createElement('div');
+        rp.className = 'ripple'; rp.style.left = (e.clientX - r.left) + 'px'; rp.style.top = (e.clientY - r.top) + 'px';
+        pad.appendChild(rp); setTimeout(function () { rp.remove(); }, 400);
+        flush(); buzz(); send({ type: 'click' });
+      }
+    }
+  }
+  pad.addEventListener('pointerup', end);
+  pad.addEventListener('pointercancel', end);
+  pad.addEventListener('wheel', function (e) { e.preventDefault(); accS += e.deltaY; sched(); }, { passive: false });
+
+  // ---- laptop shortcuts
+  document.addEventListener('keydown', function (e) {
+    var tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || e.metaKey || e.ctrlKey || e.altKey) return;
+    var map = {
+      ' ': { type: 'video', action: 'toggle' }, 'ArrowLeft': { type: 'video', action: 'seek', value: -10 },
+      'ArrowRight': { type: 'video', action: 'seek', value: 10 }, 't': { type: 'video', action: 'fill' },
+      'ArrowUp': { type: 'scroll', dy: -300 }, 'ArrowDown': { type: 'scroll', dy: 300 }, 'f': { type: 'key', key: 'f' }
+    };
+    var c = map[e.key]; if (c) { e.preventDefault(); send(c); }
+  });
+
+  function buildBookmarklet() {
+    var base = location.origin;
+    var code = "javascript:(function(){window.open('" + base + "/open?pin=" + (pin || '') +
+      "&url='+encodeURIComponent(location.href),'namastecast','width=380,height=260')})()";
+    $('bookmarklet').setAttribute('href', code);
+  }
+  $('bookmarklet').addEventListener('click', function (e) { e.preventDefault(); toast('Drag me to the bookmarks bar'); });
+
+  // ---- boot
+  fetch('/api/ping', { cache: 'no-store' }).then(function (r) { return r.json(); })
+    .then(function (p) { setOnline(true); $('tvname').textContent = p.name; })
+    .catch(function () { setOnline(false); });
+  if (!pin) showPair(); else { buildBookmarklet(); poll(); }
+  setInterval(poll, 1000);
+  document.addEventListener('visibilitychange', poll);
+})();
+</script>
+</body>
+</html>
