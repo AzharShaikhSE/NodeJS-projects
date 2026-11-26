@@ -11,6 +11,10 @@ interface RemoteHost {
     /** Latest snapshot as JSON text. Must be cheap and thread-safe. */
     fun stateJson(): String
     fun tvName(): String
+    /** A laptop wants to mirror: show the receiver page for this session id. */
+    fun startMirror(id: String)
+    /** Sender stopped: leave the receiver page. */
+    fun stopMirror()
 }
 
 /**
@@ -22,6 +26,14 @@ interface RemoteHost {
  *   POST /api/cmd       -> run one Command, JSON body        (PIN)
  *   GET  /open?url=&pin -> "send this page to TV" for the laptop bookmarklet
  *
+ * Screen mirroring (WebRTC, signaling only goes through here, video is peer-to-peer):
+ *   POST /api/mirror/offer   {sdp}  -> {id}                  (PIN)  laptop sender
+ *   GET  /api/mirror/answer?id      -> {sdp|null}            (PIN)  laptop polls
+ *   POST /api/mirror/stop                                    (PIN)
+ *   GET  /receiver?t=&id            -> receiver page the TV's own WebView loads
+ *   GET  /api/rx/offer?t=           -> {id,sdp}              (receiver token)
+ *   POST /api/rx/answer?t= {id,sdp}                          (receiver token)
+ *
  * PIN arrives as X-Pin header or ?pin=. No CORS headers are sent, so other
  * websites in your browser cannot read state; the PIN stops blind POSTs.
  */
@@ -31,10 +43,16 @@ class RemoteServer(
     private val pin: () -> String,
     private val asset: (String) -> InputStream?,
     private val clock: () -> Long = System::currentTimeMillis,
+    /** Secret only the TV's own WebView knows; guards the receiver endpoints. */
+    private val receiverToken: String = "",
+    private val newId: () -> String = { java.util.UUID.randomUUID().toString() },
 ) : NanoHTTPD(port) {
 
     private val failures = ArrayDeque<Long>()
     private val lock = Any()
+
+    private class Mirror(val id: String, val offer: String, @Volatile var answer: String? = null)
+    @Volatile private var mirror: Mirror? = null
 
     override fun serve(session: IHTTPSession): Response {
         return try {
@@ -46,6 +64,13 @@ class RemoteServer(
 
     private fun route(s: IHTTPSession): Response {
         val path = s.uri.trimEnd('/').ifEmpty { "/" }
+        // Always consume the body first. If a rejected request (bad PIN etc.) left
+        // its body unread, the leftover bytes would corrupt the next request on
+        // the same keep-alive connection.
+        val len = s.headers["content-length"]?.toIntOrNull() ?: 0
+        if (len > MAX_SDP_BODY) return json(Response.Status.BAD_REQUEST, """{"ok":false,"error":"too large"}""")
+            .apply { closeConnection(true) }
+        val body = if (len > 0) readBody(s, len) else ""
         return when {
             path == "/" || path == "/index.html" -> page("remote.html")
             path == "/api/ping" -> json(
@@ -55,8 +80,7 @@ class RemoteServer(
             path == "/api/state" && s.method == Method.GET ->
                 authed(s) { json(Response.Status.OK, host.stateJson()) }
             path == "/api/cmd" && s.method == Method.POST -> authed(s) {
-                val body = readBody(s)
-                val cmd = CommandParser.parse(body)
+                val cmd = if (body.length > MAX_CMD_BODY) null else CommandParser.parse(body)
                 if (cmd == null) {
                     json(Response.Status.BAD_REQUEST, """{"ok":false,"error":"bad command"}""")
                 } else {
@@ -73,8 +97,59 @@ class RemoteServer(
                     html(Response.Status.OK, sentPage("Sent to your TV", autoClose = true))
                 }
             }
+            path == "/api/mirror/offer" && s.method == Method.POST -> authed(s) {
+                val sdp = sdpFrom(body)
+                if (sdp == null) bad("bad sdp") else {
+                    val m = Mirror(newId(), sdp)
+                    mirror = m
+                    host.startMirror(m.id)
+                    json(Response.Status.OK, JSONObject().put("ok", true).put("id", m.id).toString())
+                }
+            }
+            path == "/api/mirror/answer" && s.method == Method.GET -> authed(s) {
+                val m = mirror
+                val id = s.parameters["id"]?.firstOrNull()
+                if (m == null || m.id != id) json(Response.Status.GONE, """{"ok":false,"error":"no session"}""")
+                else json(Response.Status.OK, JSONObject().put("ok", true).put("sdp", m.answer ?: JSONObject.NULL).toString())
+            }
+            path == "/api/mirror/stop" && s.method == Method.POST -> authed(s) {
+                mirror = null
+                host.stopMirror()
+                json(Response.Status.OK, """{"ok":true}""")
+            }
+            path == "/receiver" -> page("receiver.html")
+            path == "/api/rx/offer" && s.method == Method.GET -> receiver(s) {
+                val m = mirror
+                if (m == null) json(Response.Status.GONE, """{"ok":false}""")
+                else json(Response.Status.OK, JSONObject().put("ok", true).put("id", m.id).put("sdp", m.offer).toString())
+            }
+            path == "/api/rx/answer" && s.method == Method.POST -> receiver(s) {
+                val j = try { JSONObject(body) } catch (e: Exception) { null }
+                val m = mirror
+                val sdp = sdpFrom(body)
+                if (m == null || j == null || j.optString("id") != m.id || sdp == null) bad("stale or bad answer")
+                else { m.answer = sdp; json(Response.Status.OK, """{"ok":true}""") }
+            }
             else -> json(Response.Status.NOT_FOUND, """{"ok":false,"error":"not found"}""")
         }
+    }
+
+    private fun bad(msg: String) = json(Response.Status.BAD_REQUEST, JSONObject().put("ok", false).put("error", msg).toString())
+
+    /** Pulls "sdp" out of a JSON body and sanity-checks it looks like SDP. */
+    private fun sdpFrom(body: String): String? {
+        val sdp = try { JSONObject(body).optString("sdp") } catch (e: Exception) { return null }
+        return sdp.takeIf { it.startsWith("v=0") && it.length <= MAX_SDP_BODY }
+    }
+
+    private fun receiver(s: IHTTPSession, block: () -> Response): Response {
+        val t = s.parameters["t"]?.firstOrNull()
+        return if (receiverToken.isEmpty() || t != receiverToken) json(Response.Status.FORBIDDEN, """{"ok":false}""") else block()
+    }
+
+    companion object {
+        const val MAX_CMD_BODY = 8192
+        const val MAX_SDP_BODY = 64 * 1024
     }
 
     private fun authed(s: IHTTPSession, htmlErrors: Boolean = false, block: () -> Response): Response {
@@ -100,9 +175,7 @@ class RemoteServer(
 
     private fun recordFailure() = synchronized(lock) { failures.addLast(clock()) }
 
-    private fun readBody(s: IHTTPSession): String {
-        val len = s.headers["content-length"]?.toIntOrNull() ?: 0
-        if (len <= 0 || len > 8192) return ""
+    private fun readBody(s: IHTTPSession, len: Int): String {
         val buf = ByteArray(len)
         var read = 0
         while (read < len) {

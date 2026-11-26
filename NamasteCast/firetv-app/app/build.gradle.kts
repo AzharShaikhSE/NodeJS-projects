@@ -12,8 +12,8 @@ android {
         // Fire OS 5 (Fire TV Stick gen 2) is API 22. Newer sticks are 25/28/30.
         minSdk = 22
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
     }
 
     signingConfigs {

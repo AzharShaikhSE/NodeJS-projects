@@ -72,6 +72,11 @@ class MainActivity : Activity(), RemoteHost {
 
     @Volatile private var snapshot = "{}"
 
+    /** Random per launch. Only our own WebView gets it (in the receiver URL). */
+    private val receiverToken: String = ByteArray(16).also { SecureRandom().nextBytes(it) }
+        .joinToString("") { "%02x".format(it) }
+    private var beforeMirrorUrl: String? = null
+
     private val pin: String by lazy {
         prefs.getString("pin", null) ?: String.format("%04d", SecureRandom().nextInt(10000))
             .also { prefs.edit().putString("pin", it).apply() }
@@ -243,12 +248,13 @@ class MainActivity : Activity(), RemoteHost {
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val scheme = request.url.scheme?.lowercase()
+                if (scheme == "namastecast" && request.url.host == "exit") { stopMirror(); return true }
                 return scheme != "http" && scheme != "https" // swallow intent://, market:// etc.
             }
 
             override fun onPageFinished(view: WebView, url: String) {
                 view.evaluateJavascript(helperJs, null)
-                if (url.startsWith("http")) {
+                if (url.startsWith("http") && !isReceiver(url)) {
                     prefs.edit().putString("lastUrl", url).apply()
                     remember(url, view.title)
                 }
@@ -305,7 +311,10 @@ class MainActivity : Activity(), RemoteHost {
         web.evaluateJavascript("$helperJs\n;$code") { r -> cb?.invoke(r) }
     }
 
+    private fun isReceiver(url: String?) = url?.startsWith("http://127.0.0.1:$port/receiver") == true
+
     private fun remember(url: String, title: String?) {
+        if (isReceiver(url)) return
         val clean = url.substringBefore('#')
         val list = history()
         val out = JSONArray()
@@ -342,6 +351,7 @@ class MainActivity : Activity(), RemoteHost {
             .put("desktop", isDesktop())
             .put("fullscreen", customView != null)
             .put("panel", panel.visibility == View.VISIBLE)
+            .put("mirroring", isReceiver(web.url))
             .put("home", home())
             .put("video", pageState)
             .put("history", history())
@@ -351,12 +361,32 @@ class MainActivity : Activity(), RemoteHost {
     override fun stateJson(): String = snapshot
     override fun tvName(): String = Build.MODEL ?: "Fire TV"
 
+    override fun startMirror(id: String) {
+        ui.post {
+            showPanel(false)
+            exitFullscreen()
+            if (!isReceiver(web.url)) beforeMirrorUrl = web.url
+            web.loadUrl("http://127.0.0.1:$port/receiver?t=$receiverToken&id=$id")
+        }
+    }
+
+    override fun stopMirror() {
+        ui.post {
+            if (!isReceiver(web.url)) return@post
+            web.loadUrl(beforeMirrorUrl ?: home())
+            flash("Mirroring stopped")
+        }
+    }
+
     // ---------------------------------------------------------------- server
 
     private fun startServer() {
         for (p in BASE_PORT..BASE_PORT + 5) {
             try {
-                val s = RemoteServer(p, this, { pin }, { name -> try { assets.open(name) } catch (e: Exception) { null } })
+                val s = RemoteServer(
+                    p, this, { pin }, { name -> try { assets.open(name) } catch (e: Exception) { null } },
+                    receiverToken = receiverToken,
+                )
                 s.start(5000, true)
                 server = s
                 port = p
@@ -503,6 +533,7 @@ class MainActivity : Activity(), RemoteHost {
         when {
             panel.visibility == View.VISIBLE -> showPanel(false)
             customView != null -> exitFullscreen()
+            isReceiver(web.url) -> stopMirror()
             web.canGoBack() -> web.goBack()
             SystemClock.uptimeMillis() - lastBackAt < 2000 -> finish()
             else -> { lastBackAt = SystemClock.uptimeMillis(); flash("Press back again to exit") }

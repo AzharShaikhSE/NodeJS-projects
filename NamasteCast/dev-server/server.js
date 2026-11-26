@@ -7,12 +7,17 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const REMOTE_HTML = path.join(here, '../firetv-app/app/src/main/assets/remote.html');
+const ASSETS = path.join(here, '../firetv-app/app/src/main/assets');
+const REMOTE_HTML = path.join(ASSETS, 'remote.html');
+const RECEIVER_TOKEN = 'test';
 const PIN = process.env.PIN || '1234';
 
 export function createTv() {
   const tv = {
     commands: [],
+    mirror: null,          // {id, offer, answer}
+    onMirrorStart: null,   // hook: real TV opens receiver.html here
+    onMirrorStop: null,
     state: {
       ok: true, name: 'Fake Fire TV', url: 'https://namastedev.com/', title: 'NamasteDev',
       progress: 100, canGoBack: false, desktop: true, fullscreen: false, panel: false,
@@ -47,10 +52,10 @@ export function createTv() {
   return tv;
 }
 
-function readBody(req) {
+function readBody(req, max = 64 * 1024) {
   return new Promise((resolve) => {
     let b = '';
-    req.on('data', (d) => { b += d; if (b.length > 8192) req.destroy(); });
+    req.on('data', (d) => { b += d; if (b.length > max) req.destroy(); });
     req.on('end', () => resolve(b));
   });
 }
@@ -65,6 +70,22 @@ export function createServer(tv = createTv()) {
       return res.end(await readFile(REMOTE_HTML));
     }
     if (u.pathname === '/api/ping') return json(200, { ok: true, name: tv.state.name, app: 'NamasteCast' });
+
+    // ---- receiver side (what the TV's own WebView calls), guarded by token
+    if (u.pathname === '/receiver') {
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(await readFile(path.join(ASSETS, 'receiver.html')));
+    }
+    if (u.pathname.startsWith('/api/rx/')) {
+      if (u.searchParams.get('t') !== RECEIVER_TOKEN) return json(403, { ok: false });
+      const m = tv.mirror;
+      if (u.pathname === '/api/rx/offer') return m ? json(200, { ok: true, id: m.id, sdp: m.offer }) : json(410, { ok: false });
+      if (u.pathname === '/api/rx/answer' && req.method === 'POST') {
+        let b; try { b = JSON.parse(await readBody(req)); } catch { return json(400, { ok: false }); }
+        if (!m || b.id !== m.id || !String(b.sdp).startsWith('v=0')) return json(400, { ok: false });
+        m.answer = b.sdp; return json(200, { ok: true });
+      }
+    }
     if (pin !== PIN) return json(401, { ok: false, error: 'pin' });
     if (u.pathname === '/api/state') return json(200, tv.state);
     if (u.pathname === '/api/cmd' && req.method === 'POST') {
@@ -72,6 +93,26 @@ export function createServer(tv = createTv()) {
       if (!c || typeof c.type !== 'string') return json(400, { ok: false });
       tv.apply(c);
       console.log('[tv] cmd', JSON.stringify(c));
+      return json(200, { ok: true });
+    }
+    // ---- laptop sender side (PIN)
+    if (u.pathname === '/api/mirror/offer' && req.method === 'POST') {
+      let b; try { b = JSON.parse(await readBody(req)); } catch { return json(400, { ok: false }); }
+      if (!String(b.sdp).startsWith('v=0')) return json(400, { ok: false });
+      tv.mirror = { id: 'm' + Date.now(), offer: b.sdp, answer: null };
+      tv.state.mirroring = true;
+      tv.onMirrorStart && tv.onMirrorStart(tv.mirror.id, RECEIVER_TOKEN);
+      return json(200, { ok: true, id: tv.mirror.id });
+    }
+    if (u.pathname === '/api/mirror/answer') {
+      const m = tv.mirror;
+      if (!m || m.id !== u.searchParams.get('id')) return json(410, { ok: false });
+      return json(200, { ok: true, sdp: m.answer });
+    }
+    if (u.pathname === '/api/mirror/stop' && req.method === 'POST') {
+      await readBody(req);
+      tv.mirror = null; tv.state.mirroring = false;
+      tv.onMirrorStop && tv.onMirrorStop();
       return json(200, { ok: true });
     }
     if (u.pathname === '/open') {

@@ -22,13 +22,20 @@ class RemoteServerTest {
         override fun execute(cmd: Command) { received += cmd }
         override fun stateJson() = """{"ok":true,"title":"Episode 1"}"""
         override fun tvName() = "AFTKA"
+        override fun startMirror(id: String) { mirrorEvents += "start:$id" }
+        override fun stopMirror() { mirrorEvents += "stop" }
     }
+    private val mirrorEvents = CopyOnWriteArrayList<String>()
 
     @Before fun start() {
         port = ServerSocket(0).use { it.localPort }
         server = RemoteServer(port, host, { "1234" }, { name ->
-            if (name == "remote.html") "<html>remote</html>".byteInputStream() else null
-        }, clock = { now })
+            when (name) {
+                "remote.html" -> "<html>remote</html>".byteInputStream()
+                "receiver.html" -> "<html>receiver</html>".byteInputStream()
+                else -> null
+            }
+        }, clock = { now }, receiverToken = "tok", newId = { "m1" })
         server.start(5000, false)
     }
 
@@ -95,4 +102,50 @@ class RemoteServerTest {
     }
 
     @Test fun `unknown path 404`() = assertEquals(404, call("/nope").code)
+
+    private val offer = "v=0\r\no=- 1 2 IN IP4 127.0.0.1\r\ns=-\r\n"
+    private fun sdpJson(sdp: String, id: String? = null) =
+        org.json.JSONObject().put("sdp", sdp).apply { id?.let { put("id", it) } }.toString()
+
+    @Test fun `mirror handshake laptop to tv receiver`() {
+        // laptop posts offer -> TV opens receiver
+        val o = call("/api/mirror/offer", "POST", "1234", sdpJson(offer))
+        assertEquals(200, o.code)
+        assertTrue(o.body.contains("\"id\":\"m1\""))
+        assertEquals(listOf("start:m1"), mirrorEvents.toList())
+        // no answer yet
+        assertTrue(call("/api/mirror/answer?id=m1", pin = "1234").body.contains("\"sdp\":null"))
+        // receiver page needs no PIN, but its data needs the token
+        assertEquals(200, call("/receiver").code)
+        assertEquals(403, call("/api/rx/offer").code)
+        assertEquals(403, call("/api/rx/offer?t=wrong").code)
+        val rx = call("/api/rx/offer?t=tok")
+        assertEquals(200, rx.code)
+        assertTrue(rx.body.contains("v=0"))
+        // stale id or junk answer rejected
+        assertEquals(400, call("/api/rx/answer?t=tok", "POST", body = sdpJson("v=0 x", "old")).code)
+        assertEquals(400, call("/api/rx/answer?t=tok", "POST", body = sdpJson("not sdp", "m1")).code)
+        // real answer reaches the laptop
+        assertEquals(200, call("/api/rx/answer?t=tok", "POST", body = sdpJson("v=0 answer", "m1")).code)
+        assertTrue(call("/api/mirror/answer?id=m1", pin = "1234").body.contains("v=0 answer"))
+        assertEquals(410, call("/api/mirror/answer?id=zzz", pin = "1234").code)
+        // stop
+        assertEquals(200, call("/api/mirror/stop", "POST", "1234", "{}").code)
+        assertEquals(listOf("start:m1", "stop"), mirrorEvents.toList())
+        assertEquals(410, call("/api/rx/offer?t=tok").code)
+    }
+
+    @Test fun `mirror endpoints need pin and valid sdp`() {
+        assertEquals(401, call("/api/mirror/offer", "POST", "0000", sdpJson(offer)).code)
+        assertEquals(400, call("/api/mirror/offer", "POST", "1234", sdpJson("hello")).code)
+        assertEquals(401, call("/api/mirror/stop", "POST", null, "{}").code)
+        assertTrue(mirrorEvents.isEmpty())
+    }
+
+    @Test fun `rejected POST does not poison the next request on a kept-alive connection`() {
+        repeat(3) {
+            assertEquals(401, call("/api/cmd", "POST", "0000", """{"type":"click"}""").code)
+            assertEquals(200, call("/api/state", pin = "1234").code)
+        }
+    }
 }

@@ -1,0 +1,18 @@
+{
+  "name": "namastecast-laptop-mirror",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mirror your laptop screen or a tab to the NamasteCast Fire TV app over Wi-Fi (WebRTC). No dependencies.",
+  "type": "module",
+  "bin": {
+    "namastecast-mirror": "server.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js",
+    "e2e": "node test/e2e.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

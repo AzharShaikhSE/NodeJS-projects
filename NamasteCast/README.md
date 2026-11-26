@@ -1,6 +1,13 @@
 # NamasteCast
 
-Watch your NamasteDev courses on the big screen (Fire TV Stick on your LG TV), with your phone or laptop as the remote. Works like Netflix's "cast" button, not like screen mirroring.
+Watch your NamasteDev courses on the big screen (Fire TV Stick on your LG TV), with your phone or laptop as the remote. Two modes:
+
+| Mode | What happens | Use it for |
+|---|---|---|
+| **Play on TV** (cast a link) | The TV opens the page itself and plays it, logged into your account | NamasteDev lessons, YouTube, anything with protected video |
+| **Mirror my laptop** | Your laptop screen or one tab streams live to the TV over Wi-Fi (WebRTC, H.264) | Slides, code, docs, any page; similar to what PigeonCast does |
+
+Protected video (DRM) shows black when *mirrored*, by any app. That's why lessons use Play on TV.
 
 ## Why mirroring gave you audio but no video
 
@@ -59,6 +66,20 @@ Press **menu (three lines)** on the Fire remote any time to bring the card back.
 2. Use **Type on TV** to send your email, password or OTP.
 3. Cookies persist, so you stay logged in.
 
+## Mirror your laptop (any app, any page)
+
+```bash
+cd NamasteCast/laptop-mirror && npm start      # opens http://localhost:8766
+```
+1. Click **Find my TV** (or type the address from the TV card) and enter the PIN.
+2. Pick a quality. Start with **Smooth** on an older Fire Stick.
+3. **Start mirroring** and pick a tab (sends its sound too) or your entire screen.
+4. Stop from the page, Chrome's "Stop sharing" bar, or **Back** on the Fire remote.
+
+Why a tiny local app instead of a web page: browsers only allow screen capture on `https` or `localhost` pages, and the TV serves plain `http`. The local app hosts the capture page on `localhost` and relays the ~5 KB handshake to the TV. The video goes laptop browser → TV directly, never through Node.
+
+Phone screen mirroring isn't included. It needs a native phone app; see the trade-off below.
+
 ## Daily use
 
 | You want to | Do this |
@@ -75,14 +96,19 @@ Press **menu (three lines)** on the Fire remote any time to bring the card back.
 
 ```
 NamasteCast/
-├── dist/NamasteCast.apk          signed, ready to sideload (v1.0.0)
-├── firetv-app/                   Android TV app (Kotlin, no AndroidX, 0.9 MB)
+├── HANDOVER.md                   checklist for installing + testing on the real Fire Stick
+├── dist/NamasteCast.apk          signed, ready to sideload (v1.1.0)
+├── firetv-app/                   Android TV app (Kotlin, no AndroidX, under 1 MB)
 │   └── app/src/main/
 │       ├── java/.../MainActivity.kt   WebView, DRM permission, pointer, fullscreen, Fire remote keys
-│       ├── java/.../RemoteServer.kt   LAN HTTP API (NanoHTTPD), PIN auth, lockout
+│       ├── java/.../RemoteServer.kt   LAN HTTP API (NanoHTTPD), PIN auth, lockout, mirror signaling
 │       ├── java/.../Commands.kt       command parsing + URL allow-listing (unit tested)
 │       ├── assets/remote.html         the phone/laptop remote (served by the TV)
+│       ├── assets/receiver.html       full-screen WebRTC receiver for mirroring
 │       └── assets/tv-helper.js        injected into pages: video control, TV mode, scroll
+├── laptop-mirror/                `npm start`: mirror laptop screen/tab to the TV (no deps)
+│   ├── server.js                 localhost relay, TV discovery, SDP mDNS unmasking
+│   └── public/sender.html        capture + WebRTC sender, H.264 preferred, live stats
 └── dev-server/                   Node mock of the TV API + tests
     ├── server.js                 `npm start` -> work on remote.html on your laptop, no TV needed
     ├── share-apk.js              `npm run share-apk` -> short install URL
@@ -97,6 +123,9 @@ NamasteCast/
 - **Security.** LAN-only HTTP, 4-digit PIN (header or query), 10 wrong PINs lock the API for 60s. The API sends no CORS headers, so other websites can't read it. Only `http(s)` URLs can be opened, never `javascript:`, `file:` or `intent:`. The WebView gets the DRM permission only, never camera or mic. Known gap: traffic on your home Wi-Fi is plain HTTP, so anyone already on your network could sniff the PIN. Acceptable for a home TV. Don't run it on shared or public Wi-Fi.
 - **Signing key is committed** (`firetv-app/keystore`, password `namastecast`). Every build, here or in CI or on your laptop, can install over the previous one. The catch: since the repo is public, anyone could sign an APK that installs as an update to this app. That only matters if you sideload an APK from someone else. Only install from this repo.
 
+- **Mirroring is LAN-only WebRTC with no STUN/TURN servers.** It costs $0, the video never leaves your house, and latency is low. The trade-off is that it won't work across networks. Chrome hides LAN IPs behind random `.local` names, which a Fire TV may not resolve, so the relay swaps them back for the real IPs it already knows.
+- **No phone-screen mirroring, no AirPlay/Chromecast receiver.** Phone mirroring needs a native Android app (screen-capture API, about a week of work) and an iOS broadcast extension (Apple developer account, $99 USD/year). Acting as an AirPlay receiver means reimplementing a closed protocol. PigeonCast or AirScreen already do this for about $20/year. Buying is cheaper than building here, and neither will show DRM lessons anyway.
+
 ## Testing
 
 | Layer | How | Result on this build |
@@ -106,11 +135,14 @@ NamasteCast/
 | Mock API contract | `npm test` | 1/1 pass |
 | Phone + laptop remote UI | Playwright, iPhone 13 + 1280px desktop | 7/7 pass |
 | Video helper on real `<video>` (inline + cross-origin iframe) | Playwright, Chromium | 3/3 pass |
+| Mirror signaling, keep-alive regression | JUnit | 3/3 pass |
+| Laptop relay: IP allow-list, SDP unmasking, Host guard | `npm test` in laptop-mirror | 4/4 pass |
+| Full mirror path: sender → relay → TV API → receiver, real WebRTC video | Playwright, Chromium | 4/4 pass (1280x720, 29 fps, H.264) |
 | Release build | `assembleRelease` + lint + apksigner verify | pass |
 
 CI (`.github/workflows/namastecast.yml`) runs all of this on every push and uploads the APK as an artifact.
 
-**Not tested:** on real Fire TV hardware, and against NamasteDev itself (no emulator support in the build box, and I don't have your login). Those are the first things to check. See below.
+**Not tested:** on real Fire TV hardware, and against NamasteDev itself (no emulator support in the build box, and I don't have your login). Whether the Fire TV's WebView decodes WebRTC H.264 smoothly is also unverified. [`HANDOVER.md`](HANDOVER.md) is the checklist for doing this on your Mac.
 
 ## If something's off
 

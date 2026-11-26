@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NamasteCast Mirror</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;color:#f4f4f6;font:600 22px system-ui,sans-serif}
+  video{position:fixed;inset:0;width:100vw;height:100vh;object-fit:contain;background:#000}
+  #msg{position:fixed;inset:0;display:grid;place-items:center;text-align:center;transition:opacity .4s}
+  #msg.hide{opacity:0;pointer-events:none}
+  .ring{width:56px;height:56px;margin:0 auto 22px;border-radius:50%;border:5px solid #2a2a33;border-top-color:#ff7a1a;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  small{display:block;color:#9a9aa6;font-weight:400;font-size:16px;margin-top:8px}
+</style>
+</head>
+<body>
+<video id="v" autoplay playsinline></video>
+<div id="msg"><div><div class="ring"></div><span id="text">Connecting to your laptop...</span><small id="sub">Mirroring over Wi-Fi</small></div></div>
+<script>
+(function () {
+  'use strict';
+  var qs = new URLSearchParams(location.search);
+  var t = qs.get('t'), wantId = qs.get('id');
+  var v = document.getElementById('v');
+  var msg = document.getElementById('msg');
+  var text = document.getElementById('text');
+  var pc = null, downSince = 0;
+
+  function say(a, b) { text.textContent = a; document.getElementById('sub').textContent = b || ''; msg.classList.remove('hide'); }
+  function exit() { location.href = 'namastecast://exit'; }
+
+  function iceDone(pc, ms) {
+    return new Promise(function (res) {
+      if (pc.iceGatheringState === 'complete') return res();
+      var to = setTimeout(res, ms);
+      pc.addEventListener('icegatheringstatechange', function () {
+        if (pc.iceGatheringState === 'complete') { clearTimeout(to); res(); }
+      });
+    });
+  }
+
+  async function start() {
+    var r = await fetch('/api/rx/offer?t=' + encodeURIComponent(t), { cache: 'no-store' });
+    if (!r.ok) { say('Mirroring ended', ''); return setTimeout(exit, 1500); }
+    var o = await r.json();
+    if (wantId && o.id !== wantId) { /* a newer session replaced us; app reloads with its id */ }
+
+    // LAN only: no STUN/TURN, host candidates are enough on the same Wi-Fi.
+    pc = new RTCPeerConnection({ iceServers: [] });
+    pc.ontrack = function (e) {
+      var stream = e.streams && e.streams[0] ? e.streams[0] : new MediaStream([e.track]);
+      if (v.srcObject !== stream) v.srcObject = stream;
+      v.play().catch(function () { v.muted = true; v.play(); });
+    };
+    pc.onconnectionstatechange = function () {
+      var st = pc.connectionState;
+      if (st === 'connected') { downSince = 0; }
+      if (st === 'disconnected' || st === 'failed') {
+        downSince = downSince || Date.now();
+        say('Connection lost', 'Waiting for the laptop...');
+      }
+      if (st === 'closed') exit();
+    };
+    await pc.setRemoteDescription({ type: 'offer', sdp: o.sdp });
+    await pc.setLocalDescription(await pc.createAnswer());
+    await iceDone(pc, 2500);
+    var a = await fetch('/api/rx/answer?t=' + encodeURIComponent(t), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: o.id, sdp: pc.localDescription.sdp })
+    });
+    if (!a.ok) { say('Mirroring ended', ''); return setTimeout(exit, 1500); }
+    say('Connecting to your laptop...', 'Accept the share prompt on the laptop if it is still open');
+  }
+
+  v.addEventListener('playing', function () { msg.classList.add('hide'); });
+  // Give up after 10s of a dead connection and go back to the previous page.
+  setInterval(function () { if (downSince && Date.now() - downSince > 10000) exit(); }, 1000);
+
+  start().catch(function (e) { say('Could not start mirroring', String(e && e.message || e)); setTimeout(exit, 4000); });
+})();
+</script>
+</body>
+</html>
